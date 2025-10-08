@@ -8,6 +8,7 @@ from mysql.connector import Error
 from ultralytics import YOLO
 import supervision as sv
 import easyocr
+from collections import Counter
 
 PORT_ARDUINO = 'COM5'
 BAUDRATE = 9600
@@ -28,13 +29,7 @@ except Exception as e:
     exit()
 
 model = YOLO(MODEL_PATH)
-box_annotator = sv.BoxAnnotator(thickness=2)
-label_annotator = sv.LabelAnnotator(text_scale=0.5, text_thickness=1, text_position=sv.Position.TOP_CENTER)
-
-print("Memuat model OCR...")
-reader = easyocr.Reader(['en'])
-print("✅ Model OCR berhasil dimuat.")
-
+reader = easyocr.Reader(['en'], gpu=False)
 try:
     db_connection = mysql.connector.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD, database=DB_NAME)
     db_cursor = db_connection.cursor()
@@ -50,9 +45,7 @@ def plat_sudah_ada(nomor_plat):
         query = f"SELECT 1 FROM {DB_TABLE} WHERE nomor_plat = %s LIMIT 1"
         db_cursor.execute(query, (nomor_plat,))
         return db_cursor.fetchone() is not None
-    except Error as e:
-        print(f"❌ Error saat mengecek plat: {e}")
-        return False
+    except Error as e: return False
 
 def simpan_plat(waktu_masuk, nomor_plat):
     try:
@@ -60,26 +53,21 @@ def simpan_plat(waktu_masuk, nomor_plat):
         values = (waktu_masuk, nomor_plat)
         db_cursor.execute(query, values)
         db_connection.commit()
-    except Error as e:
-        print(f"❌ Error saat menyimpan plat: {e}")
-
-def validate_plate_format(text):
-    pattern = re.compile(r'^[A-Z]{1,2}\d{1,4}[A-Z]{1,3}$')
-    return pattern.match(text) is not None
+    except Error as e: print(f"❌ Error saat menyimpan plat: {e}")
 
 def kirim_perintah_arduino(perintah):
-    if perintah == "BUKA":
-        arduino.write(b'B')
-        print("✅ [PYTHON] Perintah BUKA dikirim ke Arduino.")
-    elif perintah == "TUTUP":
-        arduino.write(b'T')
-        print("✅ [PYTHON] Perintah TUTUP dikirim ke Arduino.")
+    if perintah == "BUKA": arduino.write(b'B')
+    elif perintah == "TUTUP": arduino.write(b'T')
 
-def deteksi_dan_cek_plat(frame):
+def ekstrak_plat_dari_frame(frame):
+    """Fungsi ini hanya mengekstrak teks plat, tanpa menyimpan ke DB."""
+    extraction_pattern = re.compile(r'([A-Z]{1,2}\d{1,4}[A-Z]{1,3})')
     results = model(frame, stream=True, conf=0.25, verbose=False)
+    
     for res in results:
         detections = sv.Detections.from_ultralytics(res)
         if len(detections) == 0: continue
+        
 
         best_detection_index = detections.confidence.argmax()
         detections = detections[best_detection_index:best_detection_index+1]
@@ -87,28 +75,22 @@ def deteksi_dan_cek_plat(frame):
         bbox = detections.xyxy[0]
         x1, y1, x2, y2 = map(int, bbox)
         plate_crop = frame[y1:y2, x1:x2]
+        
         if plate_crop.size > 0:
             ocr_result = reader.readtext(plate_crop, detail=0, allowlist='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
             if ocr_result:
-                plate_text = "".join(ocr_result).upper().replace(" ", "")
-                print(f"[DEBUG] OCR MENTAH: '{' '.join(ocr_result)}' -> DIPROSES: '{plate_text}'")
-                if validate_plate_format(plate_text):
-                    if not plat_sudah_ada(plate_text):
-                        timestamp_dt = datetime.datetime.now()
-                        timestamp_str = timestamp_dt.strftime("%Y-%m-%d %H:%M:%S")
-                        simpan_plat(timestamp_str, plate_text)
-                        print(f"✅ [{timestamp_str}] PLAT BARU terdeteksi dan disimpan: {plate_text}")
-                        return "BARU", detections, plate_text
-                    else:
-                        print(f"⚠️  PLAT TERDETEKSI DUPLIKASI: {plate_text}")
-                        return "DUPLIKAT", detections, plate_text
-    return "GAGAL", sv.Detections.empty(), ""
+                raw_plate_text = "".join(ocr_result).upper().replace(" ", "")
+                match = extraction_pattern.search(raw_plate_text)
+                if match:
+                    return match.group(1) 
+    return None
 
-deteksi_aktif = False
-waktu_mulai_deteksi = 0
-TIMEOUT_DETEKSI = 30
+sistem_status = "MENUNGGU" 
+kandidat_plat = []
+waktu_mulai_pengumpulan = 0
+DURASI_PENGUMPULAN = 3
 
-print("\n🚀 Sistem Parkir Otomatis Dimulai. Menunggu sinyal dari Sensor 1...")
+print("\n🚀 Sistem Parkir Cerdas (Versi Stabil) Dimulai. Menunggu sinyal dari Sensor 1...")
 
 try:
     while cap.isOpened():
@@ -116,49 +98,56 @@ try:
         if not success: break
         if cv2.waitKey(1) & 0xFF == ord('q'): break
 
-        annotated_frame = frame.copy()
-
         if arduino.in_waiting > 0:
             data_dari_arduino = arduino.readline().decode('utf-8').strip()
             print(f"ℹ️ Menerima sinyal dari Arduino: '{data_dari_arduino}'")
-            if data_dari_arduino == "SENSOR1_AKTIF" and not deteksi_aktif:
-                print("🔥 SENSOR 1 AKTIF! Memulai mode deteksi plat...")
-                deteksi_aktif = True
-                waktu_mulai_deteksi = time.time()
+            if data_dari_arduino == "SENSOR1_AKTIF" and sistem_status == "MENUNGGU":
+                print("🔥 SENSOR 1 AKTIF! Memulai fase pengumpulan data plat...")
+                sistem_status = "MENGUMPULKAN"
+                kandidat_plat = []
+                waktu_mulai_pengumpulan = time.time()
             elif data_dari_arduino == "SENSOR2_AKTIF":
                 kirim_perintah_arduino("TUTUP")
+                print("✅ [PYTHON] Perintah TUTUP dikirim ke Arduino.")
 
-        if deteksi_aktif:
-            cv2.putText(annotated_frame, "MEMINDAI PLAT...", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-            
-            status_plat, detections, plate_text = deteksi_dan_cek_plat(frame)
-            
-            if not detections.is_empty():
-                labels = [f"{plate_text} ({detections.confidence[0]:0.2f})"]
-                annotated_frame = box_annotator.annotate(scene=annotated_frame, detections=detections)
-                annotated_frame = label_annotator.annotate(scene=annotated_frame, detections=detections, labels=labels)
 
-            if status_plat == "BARU":
-                kirim_perintah_arduino("BUKA")
-                deteksi_aktif = False
-            elif status_plat == "DUPLIKAT":
-                print("Gerbang tidak dibuka karena plat sudah terdaftar.")
-                time.sleep(2)
-                deteksi_aktif = False
+        if sistem_status == "MENGUMPULKAN":
+            cv2.putText(frame, f"MENGUMPULKAN... ({len(kandidat_plat)})", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
             
-            if time.time() - waktu_mulai_deteksi > TIMEOUT_DETEKSI:
-                print("❌ Waktu deteksi habis. Gagal menemukan plat yang valid.")
-                deteksi_aktif = False
+            plat_terbaca = ekstrak_plat_dari_frame(frame)
+            if plat_terbaca:
+                kandidat_plat.append(plat_terbaca)
+                print(f"[INFO] Kandidat plat ditemukan: {plat_terbaca}")
+            
+            if time.time() - waktu_mulai_pengumpulan > DURASI_PENGUMPULAN:
+                print("⌛ Waktu pengumpulan habis. Memulai analisis...")
+                sistem_status = "ANALISIS"
 
-        cv2.imshow("Sistem Gerbang Parkir Cerdas (Tekan 'q' untuk keluar)", annotated_frame)
+        elif sistem_status == "ANALISIS":
+            if not kandidat_plat:
+                print("❌ Tidak ada kandidat plat yang terkumpul. Kembali ke mode menunggu.")
+                sistem_status = "MENUNGGU"
+            else:
+                plat_terbaik = Counter(kandidat_plat).most_common(1)[0][0]
+                print(f"📈 Analisis Selesai. Plat terbaik adalah: {plat_terbaik}")
+                
+                if not plat_sudah_ada(plat_terbaik):
+                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    simpan_plat(timestamp, plat_terbaik)
+                    print(f"✅ PLAT BARU! Menyimpan {plat_terbaik} ke database dan membuka gerbang.")
+                    kirim_perintah_arduino("BUKA")
+                    print("✅ [PYTHON] Perintah BUKA dikirim ke Arduino.")
+                else:
+                    print(f"⚠️  PLAT DUPLIKAT! {plat_terbaik} sudah ada. Gerbang tidak dibuka.")
+                
+                sistem_status = "MENUNGGU"
+                print("\n🚀 Siap untuk kendaraan berikutnya. Menunggu sinyal dari Sensor 1...")
+
+        cv2.imshow("Sistem Gerbang Parkir Cerdas", frame)
+
 finally:
     print("\n👋 Membersihkan dan menutup program...")
     cap.release()
     cv2.destroyAllWindows()
-    if 'arduino' in locals() and arduino.is_open:
-        arduino.close()
-        print("Koneksi Arduino ditutup.")
-    if 'db_connection' in locals() and db_connection.is_connected():
-        db_cursor.close()
-        db_connection.close()
-        print("Koneksi MySQL ditutup.")
+    if 'arduino' in locals() and arduino.is_open: arduino.close()
+    if 'db_connection' in locals() and db_connection.is_connected(): db_connection.close()
