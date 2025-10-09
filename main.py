@@ -171,7 +171,7 @@ try:
             (text_width, _), _ = cv2.getTextSize(collecting_text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)
             frame_width = frame.shape[1]
             pos_x = frame_width - text_width - 50
-            cv2.putText(frame, collecting_text, (pos_x, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            cv2.putText(frame, collecting_text, (pos_x, 90), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
         
         cv2.imshow("Sistem Gerbang Parkir Cerdas", frame)
 
