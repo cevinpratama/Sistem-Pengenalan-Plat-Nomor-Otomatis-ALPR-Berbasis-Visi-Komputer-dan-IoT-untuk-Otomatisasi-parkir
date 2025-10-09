@@ -126,8 +126,6 @@ try:
                 print("✅ [PYTHON] Perintah TUTUP dikirim ke Arduino.")
 
         if sistem_status == "MENGUMPULKAN":
-            cv2.putText(frame, f"MENGUMPULKAN... ({len(kandidat_plat)})", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-            
             plat_terbaca = ekstrak_plat_dari_frame(frame)
             if plat_terbaca:
                 kandidat_plat[plat_terbaca] = kandidat_plat.get(plat_terbaca, 0) + 1
@@ -167,6 +165,14 @@ try:
 
         status_text = f"STATUS: {sistem_status}"
         cv2.putText(frame, status_text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+
+        if sistem_status == "MENGUMPULKAN":
+            collecting_text = f"Mendeteksi... ({len(kandidat_plat)})"
+            (text_width, _), _ = cv2.getTextSize(collecting_text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)
+            frame_width = frame.shape[1]
+            pos_x = frame_width - text_width - 50
+            cv2.putText(frame, collecting_text, (pos_x, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        
         cv2.imshow("Sistem Gerbang Parkir Cerdas", frame)
 
 finally:
