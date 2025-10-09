@@ -85,6 +85,15 @@ def ekstrak_plat_dari_frame(frame):
                     return match.group(1) 
     return None
 
+def preprocess_for_ocr(image):
+    """Meningkatkan kualitas gambar crop plat untuk OCR."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    enhanced_gray = clahe.apply(gray)
+    
+    return enhanced_gray
+
 sistem_status = "MENUNGGU" 
 kandidat_plat = []
 waktu_mulai_pengumpulan = 0
