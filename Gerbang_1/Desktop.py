@@ -111,11 +111,33 @@ class ParkingSystemApp(ctk.CTk):
         )
         self.plat_label.pack(pady=(5, 15))
         
-        # Frame Kandidat Plat (DIHAPUS)
+       
+        self.log_frame = ctk.CTkFrame(self.right_frame, corner_radius=10)
+        self.log_frame.pack(pady=10, padx=20, fill="both", expand=True)
         
-        # Frame Statistik (DIHAPUS)
+        ctk.CTkLabel(
+            self.log_frame,
+            text="📝 Log Aktivitas",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(pady=(15, 10))
         
+        self.log_text = ctk.CTkTextbox(
+            self.log_frame,
+            font=ctk.CTkFont(size=11),
+            corner_radius=8
+        )
+        self.log_text.pack(pady=(0, 15), padx=15, fill="both", expand=True)
         
+    def log_message(self, message):
+        """Menambahkan pesan ke log"""
+        try:
+            timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+            self.log_text.insert("end", f"[{timestamp}] {message}\n")
+            self.log_text.see("end")
+        except Exception as e:
+            print(f"Error logging: {e}") # Fallback ke console jika GUI error
+
+    
 
     def toggle_system(self):
         """Start/Stop sistem"""
