@@ -6,7 +6,6 @@ import customtkinter as ctk
 from PIL import Image, ImageTk
 import threading
 
-# Asumsikan file-file ini ada di direktori yang sama
 from iot_controller import ArduinoController
 from db_controller import DatabaseManager
 from vision_processor import VisionProcessor
@@ -25,7 +24,6 @@ class ParkingSystemApp(ctk.CTk):
         self.db = DatabaseManager()
         self.vision = VisionProcessor()
         
-        # Variabel logika tetap ada untuk akurasi
         self.sistem_status = "MENUNGGU"
         self.kandidat_plat = {} 
         self.waktu_mulai_pengumpulan = 0
@@ -42,7 +40,6 @@ class ParkingSystemApp(ctk.CTk):
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
         
-        # --- Frame Kiri (Video) ---
         self.left_frame = ctk.CTkFrame(self, corner_radius=15)
         self.left_frame.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
         self.left_frame.grid_rowconfigure(1, weight=1)
@@ -69,7 +66,6 @@ class ParkingSystemApp(ctk.CTk):
         )
         self.status_label.pack(pady=15)
         
-        # --- Frame Kanan (Kontrol) ---
         self.right_frame = ctk.CTkFrame(self, corner_radius=15)
         self.right_frame.grid(row=0, column=1, padx=(0, 20), pady=20, sticky="nsew")
         self.right_frame.grid_rowconfigure(2, weight=1) # Beri bobot pada log
@@ -93,7 +89,6 @@ class ParkingSystemApp(ctk.CTk):
         )
         self.start_button.pack(pady=10, padx=20, fill="x")
         
-        # Frame Info Plat (Tetap ada)
         self.info_frame = ctk.CTkFrame(self.right_frame, corner_radius=10)
         self.info_frame.pack(pady=20, padx=20, fill="x")
         
@@ -135,7 +130,7 @@ class ParkingSystemApp(ctk.CTk):
             self.log_text.insert("end", f"[{timestamp}] {message}\n")
             self.log_text.see("end")
         except Exception as e:
-            print(f"Error logging: {e}") # Fallback ke console jika GUI error
+            print(f"Error logging: {e}") 
 
     
 
@@ -161,7 +156,6 @@ class ParkingSystemApp(ctk.CTk):
         )
         self.log_message("🚀 Sistem dimulai!")
         
-        # Jalankan processing di thread terpisah
         self.processing_thread = threading.Thread(target=self.process_video, daemon=True)
         self.processing_thread.start()
         
@@ -178,38 +172,33 @@ class ParkingSystemApp(ctk.CTk):
         self.log_message("⏹️ Sistem dihentikan!")
         
     def process_video(self):
-        """Proses video dan logika utama"""
+        """Proses video dan logika utama (VERSI THREAD-SAFE)"""
         while self.is_running:
             try:
                 success, frame = self.cap.read()
                 if not success:
-                    self.log_message("❌ Gagal membaca frame. Menghentikan...")
+                    self.after(0, self.log_message, "❌ Gagal membaca frame. Menghentikan...")
                     break
                     
-                # Baca sinyal Arduino
                 signal = self.arduino.read_line()
                 if signal:
-                    self.log_message(f"ℹ️ Sinyal: {signal}")
+                    self.after(0, self.log_message, f"ℹ️ Sinyal: {signal}")
                     
                     if signal == "SENSOR1_AKTIF" and self.sistem_status == "MENUNGGU":
-                        self.log_message("🔥 SENSOR 1 AKTIF! Memulai pengumpulan data...")
+                        self.after(0, self.log_message, "🔥 SENSOR 1 AKTIF! Memulai pengumpulan data...")
                         self.sistem_status = "MENGUMPULKAN"
-                        self.kandidat_plat.clear() # Logika kandidat tetap ada
+                        self.kandidat_plat.clear()
                         self.waktu_mulai_pengumpulan = time.time()
-                        self.status_label.configure(text="STATUS: MENGUMPULKAN DATA")
+                        self.after(0, self.status_label.configure, text="STATUS: MENGUMPULKAN DATA")
                         
                     elif signal == "SENSOR2_AKTIF":
                         self.arduino.send_command("TUTUP")
-                        self.log_message("🚪 Gerbang ditutup (Sensor 2 aktif)")
+                        self.after(0, self.log_message, "🚪 Gerbang ditutup (Sensor 2 aktif)")
                         
-                # Proses berdasarkan status
                 if self.sistem_status == "MENGUMPULKAN":
                     plat_terbaca = self.vision.extract_plate_from_frame(frame)
                     if plat_terbaca:
-                        # Logika pengumpulan kandidat tetap berjalan untuk akurasi
                         self.kandidat_plat[plat_terbaca] = self.kandidat_plat.get(plat_terbaca, 0) + 1
-                        
-                        # Panggil ke update_kandidat_display (DIHAPUS)
                         
                         if self.kandidat_plat[plat_terbaca] >= config.CONFIRMATION_COUNT:
                             self.plat_terbaik = plat_terbaca
@@ -223,53 +212,50 @@ class ParkingSystemApp(ctk.CTk):
                         self.sistem_status = "ANALISIS"
                         
                 elif self.sistem_status == "ANALISIS":
-                    self.status_label.configure(text="STATUS: MENGANALISIS")
+                    self.after(0, self.status_label.configure, text="STATUS: MENGANALISIS")
+                    
                     if self.plat_terbaik:
-                        self.plat_label.configure(text=self.plat_terbaik)
-                        self.log_message(f"📈 Plat terpilih: {self.plat_terbaik}")
+                        self.after(0, self.plat_label.configure, text=self.plat_terbaik)
+                        self.after(0, self.log_message, f"📈 Plat terpilih: {self.plat_terbaik}")
                         
                         if not self.db.is_plate_exist(self.plat_terbaik):
                             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             self.db.save_plate(timestamp, self.plat_terbaik)
                             self.arduino.send_command("BUKA")
-                            self.log_message(f"✅ Plat {self.plat_terbaik} disimpan. Gerbang dibuka!")
+                            self.after(0, self.log_message, f"✅ Plat {self.plat_terbaik} disimpan. Gerbang dibuka!")
                         else:
-                            self.log_message(f"⚠️ DUPLIKAT! {self.plat_terbaik} sudah ada.")
+                            self.after(0, self.log_message, f"⚠️ DUPLIKAT! {self.plat_terbaik} sudah ada.")
                     else:
-                        self.log_message("❌ Tidak ada plat valid terdeteksi.")
+                        self.after(0, self.log_message, "❌ Tidak ada plat valid terdeteksi.")
                         
                     self.sistem_status = "MENUNGGU"
-                    self.status_label.configure(text="STATUS: MENUNGGU")
-                    self.plat_label.configure(text="---")
+                    self.after(0, self.status_label.configure, text="STATUS: MENUNGGU")
+                    self.after(0, self.plat_label.configure, text="---")
                     
-                # Update tampilan frame
-                self.update_frame(frame)
+              
+                self.after(0, self.update_frame, frame)
                 
-                # Panggil ke update_stats (DIHAPUS)
-                
-                time.sleep(0.03) # ~30 FPS
+                time.sleep(0.03) 
             
             except Exception as e:
-                self.log_message(f"ERROR di process_video: {e}")
-                time.sleep(1) # Beri jeda jika terjadi error
+                try:
+                    self.after(0, self.log_message, f"ERROR di process_video: {e}")
+                except:
+                    print(f"ERROR di process_video: {e}")
+                time.sleep(1)
                 
     def update_frame(self, frame):
         """Update tampilan video"""
         try:
-            # Resize frame untuk display
             frame_resized = cv2.resize(frame, (800, 600))
             frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
             
-            # Convert ke PhotoImage
             img = Image.fromarray(frame_rgb)
             imgtk = ImageTk.PhotoImage(image=img)
             
-            # Update label
             self.video_label.imgtk = imgtk
             self.video_label.configure(image=imgtk)
         except Exception as e:
-            # Ini bisa terjadi saat menutup aplikasi
-            # print(f"Error updating frame: {e}") 
             pass
         
     def on_closing(self):
