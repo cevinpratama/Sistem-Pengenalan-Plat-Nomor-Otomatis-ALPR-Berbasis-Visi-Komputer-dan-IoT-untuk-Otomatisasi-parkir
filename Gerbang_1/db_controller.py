@@ -20,14 +20,24 @@ class DatabaseManager:
             print(f"❌ Error saat menghubungkan ke MySQL: {e}")
             exit()
 
-    def is_plate_exist(self, plate_number):
-        """Mengecek apakah plat sudah ada di parkiran (belum keluar)."""
+    def is_plate_exist(self, nomor_plat):
+        """
+        Mengecek apakah plat nomor sudah ada di database.
+        Ini adalah fungsi yang paling penting untuk diperbaiki.
+        """
+        if not self.cursor:
+            print("❌ (DB) Tidak ada kursor, pengecekan plat gagal.")
+            return False
+        
         try:
-            query = f"SELECT 1 FROM {config.DB_TABLE} WHERE nomor_plat = %s AND waktu_keluar IS NULL LIMIT 1"
-            self.cursor.execute(query, (plate_number,))
-            return self.cursor.fetchone() is not None
+            query = f"SELECT 1 FROM {config.DB_TABLE} WHERE nomor_plat = %s LIMIT 1"
+            self.cursor.execute(query, (nomor_plat,))
+            result = self.cursor.fetchone()
+            
+            return result is not None
+        
         except Error as e:
-            print(f"❌ Error saat mengecek plat: {e}")
+            print(f"❌ (DB) Error saat mengecek plat: {e}")
             return False
 
     def save_plate(self, entry_time, plate_number):
