@@ -4,6 +4,7 @@ import datetime
 import config
 import customtkinter as ctk
 from PIL import Image, ImageTk
+from customtkinter import CTkImage 
 import threading
 
 from iot_controller import ArduinoController
@@ -23,7 +24,7 @@ class ParkingSystemApp(ctk.CTk):
         self.arduino = ArduinoController()
         self.db = DatabaseManager()
         self.vision = VisionProcessor()
-        
+    
         self.sistem_status = "MENUNGGU"
         self.kandidat_plat = {} 
         self.waktu_mulai_pengumpulan = 0
@@ -68,7 +69,7 @@ class ParkingSystemApp(ctk.CTk):
         
         self.right_frame = ctk.CTkFrame(self, corner_radius=15)
         self.right_frame.grid(row=0, column=1, padx=(0, 20), pady=20, sticky="nsew")
-        self.right_frame.grid_rowconfigure(2, weight=1) # Beri bobot pada log
+        self.right_frame.grid_rowconfigure(2, weight=1)
         
         self.control_header = ctk.CTkLabel(
             self.right_frame,
@@ -106,7 +107,7 @@ class ParkingSystemApp(ctk.CTk):
         )
         self.plat_label.pack(pady=(5, 15))
         
-       
+        
         self.log_frame = ctk.CTkFrame(self.right_frame, corner_radius=10)
         self.log_frame.pack(pady=10, padx=20, fill="both", expand=True)
         
@@ -124,15 +125,32 @@ class ParkingSystemApp(ctk.CTk):
         self.log_text.pack(pady=(0, 15), padx=15, fill="both", expand=True)
         
     def log_message(self, message):
-        """Menambahkan pesan ke log"""
+        """Menambahkan pesan ke log (thread-safe)"""
         try:
             timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-            self.log_text.insert("end", f"[{timestamp}] {message}\n")
-            self.log_text.see("end")
+            log_entry = f"[{timestamp}] {message}\n"
+            
+            def _insert_log():
+                self.log_text.insert("end", log_entry)
+                self.log_text.see("end")
+            
+            self.after(0, _insert_log)
         except Exception as e:
             print(f"Error logging: {e}") 
 
-    
+    def update_status_label(self, new_text):
+        """Helper function (thread-safe) untuk update status label"""
+        try:
+            self.status_label.configure(text=new_text)
+        except Exception as e:
+            print(f"Error updating status label: {e}")
+
+    def update_plat_label(self, new_text):
+        """Helper function (thread-safe) untuk update plat label"""
+        try:
+            self.plat_label.configure(text=new_text)
+        except Exception as e:
+            print(f"Error updating plat label: {e}")
 
     def toggle_system(self):
         """Start/Stop sistem"""
@@ -177,23 +195,23 @@ class ParkingSystemApp(ctk.CTk):
             try:
                 success, frame = self.cap.read()
                 if not success:
-                    self.after(0, self.log_message, "❌ Gagal membaca frame. Menghentikan...")
+                    self.log_message("❌ Gagal membaca frame. Menghentikan...")
                     break
-                    
+                        
                 signal = self.arduino.read_line()
                 if signal:
-                    self.after(0, self.log_message, f"ℹ️ Sinyal: {signal}")
+                    self.log_message(f"ℹ️ Sinyal: {signal}")
                     
                     if signal == "SENSOR1_AKTIF" and self.sistem_status == "MENUNGGU":
-                        self.after(0, self.log_message, "🔥 SENSOR 1 AKTIF! Memulai pengumpulan data...")
+                        self.log_message("🔥 SENSOR 1 AKTIF! Memulai pengumpulan data...")
                         self.sistem_status = "MENGUMPULKAN"
                         self.kandidat_plat.clear()
                         self.waktu_mulai_pengumpulan = time.time()
-                        self.after(0, self.status_label.configure, text="STATUS: MENGUMPULKAN DATA")
+                        self.after(0, self.update_status_label, "STATUS: MENGUMPULKAN DATA") # <-- DIPERBAIKI
                         
-                    elif signal == "SENSOR2_AKTIF":
-                        self.arduino.send_command("TUTUP")
-                        self.after(0, self.log_message, "🚪 Gerbang ditutup (Sensor 2 aktif)")
+                    # elif signal == "SENSOR2_AKTIF":
+                    #     self.arduino.send_command("TUTUP")
+                    #     self.log_message("🚪 Gerbang ditutup (Sensor 2 aktif)")
                         
                 if self.sistem_status == "MENGUMPULKAN":
                     plat_terbaca = self.vision.extract_plate_from_frame(frame)
@@ -212,50 +230,56 @@ class ParkingSystemApp(ctk.CTk):
                         self.sistem_status = "ANALISIS"
                         
                 elif self.sistem_status == "ANALISIS":
-                    self.after(0, self.status_label.configure, text="STATUS: MENGANALISIS")
+                    self.after(0, self.update_status_label, "STATUS: MENGANALISIS")
                     
                     if self.plat_terbaik:
-                        self.after(0, self.plat_label.configure, text=self.plat_terbaik)
-                        self.after(0, self.log_message, f"📈 Plat terpilih: {self.plat_terbaik}")
+                        self.after(0, self.update_plat_label, self.plat_terbaik) 
+                        self.log_message(f"📈 Plat terpilih: {self.plat_terbaik}")
                         
                         if not self.db.is_plate_exist(self.plat_terbaik):
                             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             self.db.save_plate(timestamp, self.plat_terbaik)
                             self.arduino.send_command("BUKA")
-                            self.after(0, self.log_message, f"✅ Plat {self.plat_terbaik} disimpan. Gerbang dibuka!")
+                            self.log_message(f"✅ Plat {self.plat_terbaik} disimpan. Gerbang dibuka!")
                         else:
-                            self.after(0, self.log_message, f"⚠️ DUPLIKAT! {self.plat_terbaik} sudah ada.")
+                            self.log_message(f"⚠️ DUPLIKAT! {self.plat_terbaik} sudah ada.")
                     else:
-                        self.after(0, self.log_message, "❌ Tidak ada plat valid terdeteksi.")
+                        self.log_message("❌ Tidak ada plat valid terdeteksi.")
                         
                     self.sistem_status = "MENUNGGU"
-                    self.after(0, self.status_label.configure, text="STATUS: MENUNGGU")
-                    self.after(0, self.plat_label.configure, text="---")
+                    self.after(0, self.update_status_label, "STATUS: MENUNGGU") 
+                    self.after(0, self.update_plat_label, "---") 
                     
-              
+                
                 self.after(0, self.update_frame, frame)
                 
                 time.sleep(0.03) 
             
             except Exception as e:
                 try:
-                    self.after(0, self.log_message, f"ERROR di process_video: {e}")
+                    self.log_message(f"ERROR di process_video: {e}")
                 except:
                     print(f"ERROR di process_video: {e}")
                 time.sleep(1)
                 
     def update_frame(self, frame):
-        """Update tampilan video"""
+        """Update tampilan video (Menggunakan CTkImage)"""
         try:
-            frame_resized = cv2.resize(frame, (800, 600))
+            target_width = 800
+            target_height = 600
+            
+            frame_resized = cv2.resize(frame, (target_width, target_height))
             frame_rgb = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
             
             img = Image.fromarray(frame_rgb)
-            imgtk = ImageTk.PhotoImage(image=img)
             
-            self.video_label.imgtk = imgtk
-            self.video_label.configure(image=imgtk)
+            ctk_img = CTkImage(light_image=img, dark_image=img, size=(target_width, target_height))
+            
+            self.video_label.imgtk = ctk_img 
+            self.video_label.configure(image=ctk_img, text="") 
+            
         except Exception as e:
+            self.log_message(f"Error update_frame: {e}")
             pass
         
     def on_closing(self):
