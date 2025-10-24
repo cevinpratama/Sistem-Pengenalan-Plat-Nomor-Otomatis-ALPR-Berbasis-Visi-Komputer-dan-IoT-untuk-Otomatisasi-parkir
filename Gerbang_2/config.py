@@ -18,3 +18,5 @@ DB_TABLE = 'data_mobil'
 # Konfigurasi Logika Deteksi
 CONFIRMATION_COUNT = 5
 DURASI_PENGUMPULAN = 4
+
+
