@@ -2,14 +2,15 @@ import midtransclient
 import time
 import sys 
 import os
-
+from dotenv import load_dotenv
 from midtransclient.error_midtrans import MidtransAPIError
 
+load_dotenv() 
 SERVER_KEY = os.environ.get('MIDTRANS_SERVER_KEY', None) 
 
 if SERVER_KEY is None:
     print("❌ ERROR: Variabel lingkungan MIDTRANS_SERVER_KEY tidak ditemukan.")
-    print("SILAKAN ATUR DULU: export MIDTRANS_SERVER_KEY=\"SB-Mid-server-...\"")
+    print("SILAKAN ATUR DULU: export MIDTRANS_SERVER_KEY=\"SB-Mid-server-KUNCI-ANDA\"")
     sys.exit(1)
 
 
@@ -19,7 +20,7 @@ core_api = midtransclient.CoreApi(
 )
 
 order_id = f"QRIS-APP-{int(time.time())}" 
-gross_amount = 1000
+gross_amount = 1000 
 
 try:
     transaction_details = {
@@ -85,7 +86,7 @@ for i in range(1, MAX_CEK + 1):
             
     except MidtransAPIError as e:
         if "Transaction doesn't exist" in str(e):
-            print(f"\n❌ ERROR: Transaksi dengan Order ID {order_id} tidak ditemukan.")
+            print(f"\n❌ ERROR: Transaksi dengan Order ID {order_id} tidak ditemukan. (ID baru seharusnya ada!)")
         else:
              print(f"\n❌ ERROR API Midtrans (Polling): {e}")
         sys.exit(1)
@@ -93,52 +94,7 @@ for i in range(1, MAX_CEK + 1):
         print(f"\n❌ ERROR Umum saat Polling: {e}")
         sys.exit(1)
         
-order_id = "ORDER-QRIS-123456" 
-gross_amount = 75500
-
-INTERVAL_DETIK = 5
-MAX_CEK = 20 
-
-print(f"Memulai pengecekan status untuk Order ID: {order_id}...")
-print(f"Interval: {INTERVAL_DETIK} detik. Maksimal pengecekan: {MAX_CEK} kali.")
-print("-" * 50)
-
-for i in range(1, MAX_CEK + 1):
-    try:
-        status_response = core_api.transaction.status(order_id)
-        
-        current_status = status_response['transaction_status']
-        
-        print(f"[{i}/{MAX_CEK}] Status saat ini: {current_status}...")
-        
-        if current_status == 'settlement' or current_status == 'capture':
-            print("\n✅ PEMBAYARAN BERHASIL!")
-            print(f"Order ID: {status_response['order_id']}")
-            print(f"Jumlah: {status_response['gross_amount']}")
-            print(f"Waktu Pembayaran: {status_response.get('settlement_time', 'N/A')}")
-            sys.exit(0) 
-            
-        elif current_status == 'expire' or current_status == 'cancel':
-            print("\n❌ TRANSAKSI GAGAL ATAU KEDALUWARSA.")
-            sys.exit(0) 
-
-        elif current_status == 'pending':
-            pass
-            
-        else:
-            print(f"\n⚠️ STATUS TIDAK DIKENAL ATAU GAGAL: {current_status}")
-            sys.exit(0)
-            
-    except midtransclient.http.exceptions.NotFound:
-        print(f"\n❌ ERROR: Transaksi dengan Order ID {order_id} tidak ditemukan.")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n❌ ERROR API Midtrans: {e}")
-        
-    
     time.sleep(INTERVAL_DETIK)
 
 print("-" * 50)
-print(f"🛑 Polling selesai setelah {MAX_CEK} kali pengecekan.")
-print(f"Status terakhir untuk Order ID {order_id} masih PENDING.")
-print(f"Status terakhir untuk Order ID {order_id} masih PENDING atau terjadi masalah.")
+print(f"🛑 Polling selesai setelah {MAX_CEK} kali pengecekan. Status terakhir: PENDING.")

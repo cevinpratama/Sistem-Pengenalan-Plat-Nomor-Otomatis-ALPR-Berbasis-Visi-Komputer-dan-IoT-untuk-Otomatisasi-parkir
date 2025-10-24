@@ -1,3 +1,6 @@
+import os
+import sys
+
 
 # Konfigurasi Arduino
 PORT_ARDUINO = 'COM5'
@@ -19,4 +22,9 @@ DB_TABLE = 'data_mobil'
 CONFIRMATION_COUNT = 5
 DURASI_PENGUMPULAN = 4
 
+MIDTRANS_SERVER_KEY = os.environ.get('MIDTRANS_SERVER_KEY')
 
+if MIDTRANS_SERVER_KEY is None:
+    print("❌ ERROR: Kunci MIDTRANS_SERVER_KEY tidak ditemukan di environment variable.")
+    print("Silakan atur variabel lingkungan sebelum menjalankan aplikasi.")
+    sys.exit(1)
